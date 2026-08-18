@@ -5,7 +5,7 @@ import argparse
 import numpy as np
 import torch
 
-from .cache import block_cache, boundaries
+from .cache import cascade_cache, boundaries
 from .models import ADAPTERS, get_adapter, load_pipeline
 from .schedules import schedule_alt, skipped_steps
 
@@ -37,7 +37,7 @@ def main():
     ref = np.asarray(call())
 
     print("[2] dense pass with cache installed...")
-    with block_cache(pipe.transformer, blocks, args.steps,
+    with cascade_cache(pipe.transformer, blocks, args.steps,
                      lambda s: set(), stream_key_fn=a.stream_key_fn) as st:
         got = np.asarray(call())
     print(f"    streams={st['n_streams']} forwards={st['forwards']} "
@@ -56,7 +56,7 @@ def main():
     bp, bq = boundaries(args.steps)
     sched = schedule_alt(2, 0, nb, args.steps, bp, bq)
     n_skip_steps = len(skipped_steps(sched, args.steps))
-    with block_cache(pipe.transformer, blocks, args.steps, sched,
+    with cascade_cache(pipe.transformer, blocks, args.steps, sched,
                      stream_key_fn=a.stream_key_fn) as st2:
         alt = np.asarray(call())
     exp_skipped = n_skip_steps * nb * (a.n_streams if a.cfg_style == "two_call" else 1)

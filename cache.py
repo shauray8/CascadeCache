@@ -51,7 +51,7 @@ def _signature(args, kwargs) -> tuple:
     return tuple(sig)
 
 @contextlib.contextmanager
-def block_cache(
+def cascade_cache(
     transformer: torch.nn.Module,
     blocks: torch.nn.ModuleList,
     n_steps: int,

@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .cache import block_cache, boundaries, step_sigma
+from .cache import cascade_cache, boundaries, step_sigma
 from .models import ADAPTERS, get_adapter, load_pipeline
 from .schedules import (
     describe,
@@ -74,7 +74,7 @@ def main():
 
     def gen(prompt, sched, capture=False):
         gencuda = torch.Generator(device="cuda").manual_seed(args.seed)
-        with block_cache(pipe.transformer, blocks, steps, sched,
+        with cascade_cache(pipe.transformer, blocks, steps, sched,
                          stream_key_fn=a.stream_key_fn, capture_sigma=capture,
                          late_start=ls) as st:
             torch.cuda.synchronize()

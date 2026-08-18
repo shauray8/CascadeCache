@@ -1,4 +1,4 @@
-from .cache import block_cache, boundaries, step_sigma
+from .cache import cascade_cache, boundaries, step_sigma
 from .models import ADAPTERS, Adapter, get_adapter, load_pipeline
 from .schedules import (
     describe,
@@ -15,7 +15,7 @@ __all__ = [
     "Adapter",
     "get_adapter",
     "load_pipeline",
-    "block_cache",
+    "cascade_cache",
     "boundaries",
     "step_sigma",
     "schedule_alt",
