@@ -12,7 +12,7 @@ python -m cascade_cache.run --model qwen-image-2512 --schedule all --prompts-jso
 
 or use it directly 
 ```python
-from cascade_cache import get_adapter, load_pipeline, cascade_cache, schedule_alt
+from CascadeCache import get_adapter, load_pipeline, cascade_cache, schedule_alt
 
 a = get_adapter("qwen-image-2512")
 pipe = load_pipeline(a)
