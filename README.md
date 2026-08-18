@@ -7,7 +7,7 @@
 pip install diffusers transformers torch triton 
 
 # generate: dense reference + alt2 + alt3 + σ-threshold (3 budgets), over a prompt set
-python -m cascade_cache.run --model qwen-image-2512 --schedule all --prompts-json prompts.json
+python -m CascadeCache.run --model qwen-image-2512 --schedule all --prompts-json prompts.json
 ```
 
 or use it directly 
