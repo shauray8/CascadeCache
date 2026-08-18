@@ -69,7 +69,7 @@ def teacache_zimage(transformer, rel_l1_thresh: float,
             return orig(x, *args, **kwargs)
         return wrapped
 
-    def make_last(orig, idx):
+    def make_last(orig):
         def wrapped(x, *args, **kwargs):
             if ctx["skip"]:
                 return x
@@ -82,7 +82,7 @@ def teacache_zimage(transformer, rel_l1_thresh: float,
         if i == 0 and n > 1:
             l.forward = make_first(orig_forwards[i])
         elif i == n - 1:
-            base = make_last(orig_forwards[i], i)
+            base = make_last(orig_forwards[i])
             l.forward = base if n > 1 else make_first(orig_forwards[i])
         else:
             l.forward = make_mid(orig_forwards[i])

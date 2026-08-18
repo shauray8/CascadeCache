@@ -26,9 +26,6 @@ def fused_norm(
     d_nrm = d_sq ** 0.5 + eps
     return h_nrm, d_nrm
 
-def fused_norm_device(h: torch.Tensor, p: torch.Tensor) -> torch.Tensor:
-    return _squared_norms(h, p)
-
 def backend_for(h: torch.Tensor) -> str:
     if h.dtype == torch.bfloat16 and h.is_cuda and sigma_cuda.available():
         return "cuda"

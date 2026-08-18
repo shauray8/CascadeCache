@@ -19,18 +19,6 @@ from .schedules import (
 )
 from .kernels.sigma import backend_for
 
-def _psnr(a, b) -> float:
-    a = np.asarray(a).astype(np.float32) / 255.0
-    b = np.asarray(b).astype(np.float32) / 255.0
-    return float(-10.0 * np.log10(max(((a - b) ** 2).mean(), 1e-12)))
-
-def _lap_var(img) -> float:
-    g = np.asarray(img.convert("L"), dtype=np.float64) / 255.0
-    h, w = g.shape
-    out = (-4 * g[1:h - 1, 1:w - 1] + g[0:h - 2, 1:w - 1] + g[2:h, 1:w - 1]
-           + g[1:h - 1, 0:w - 2] + g[1:h - 1, 2:w])
-    return float(out.var())
-
 def _slug(t: str, n: int = 6) -> str:
     import re
     return "-".join(re.sub(r"[^a-z0-9\s-]", "", t.lower()).split()[:n]) or "prompt"
@@ -51,7 +39,6 @@ def main():
     ap.add_argument("--schedule", default="thr",
                     choices=["dense", "alt2", "alt3", "thr", "all"])
     ap.add_argument("--out-dir", default="./output/cascade_cache")
-    ap.add_argument("--json", default=None)
     args = ap.parse_args()
 
     a = get_adapter(args.model)
@@ -107,24 +94,20 @@ def main():
         raise SystemExit(
             f"stream keying wrong: saw {stw['n_streams']}, expected {a.n_streams}")
 
-    rows: list[dict] = []
+    speedups: dict[str, list[float]] = {}
     for pi, item in enumerate(items):
         prompt, name = item["prompt"], item["name"]
         print(f"\n{'='*78}\n[{pi+1}/{len(items)}] {name}\n{'='*78}")
 
         img_d, t_d, _ = gen(prompt, lambda s: set())
         img_d.save(out_dir / f"{run_tag}__p{pi:02d}-{name}__dense.png")
-        ref, lv_d = np.asarray(img_d), _lap_var(img_d)
-        print(f"  {'dense':10s} {t_d:6.2f}s  (reference)  lapVar={lv_d:.5f}")
-        rows.append(dict(model=a.name, prompt=name, schedule="dense", time=t_d,
-                         speedup=1.0, psnr=float("inf"), lapvar_ratio=1.0,
-                         budget=0.0, skips=0))
+        print(f"  {'dense':10s} {t_d:6.2f}s  (reference)")
 
         runs = []
         if args.schedule in ("alt2", "all"):
-            runs.append(("alt2", schedule_alt(2, ls, n_blocks, steps, bp, bq), None))
+            runs.append(("alt2", schedule_alt(2, ls, n_blocks, steps, bp, bq)))
         if args.schedule in ("alt3", "all"):
-            runs.append(("alt3", schedule_alt(3, ls, n_blocks, steps, bp, bq), None))
+            runs.append(("alt3", schedule_alt(3, ls, n_blocks, steps, bp, bq)))
 
         if args.schedule in ("thr", "all"):
             _, _, st_sig = gen(prompt, lambda s: set(), capture=True)
@@ -139,54 +122,25 @@ def main():
                     print(f"  !! {label}: no usable τ for {target} skips")
                     continue
                 print(f"  {label:14s} τ={tau:.4f}  realizes {realized}/{target} skips")
-                runs.append((label,
-                             schedule_threshold(sig, tau, ls, n_blocks, steps, bp, bq),
-                             tau))
+                runs.append((label, schedule_threshold(sig, tau, ls, n_blocks, steps, bp, bq)))
 
-        for label, sched, tau in runs:
+        for label, sched in runs:
             d = describe(sched, steps, n_blocks, a.n_streams)
-            img, t, st = gen(prompt, sched)
-            psnr, lv = _psnr(ref, img), _lap_var(img)
-            ratio = lv / lv_d if lv_d else float("nan")
+            img, t, _ = gen(prompt, sched)
             img.save(out_dir / f"{run_tag}__p{pi:02d}-{name}__{label}.png")
-            steps_skipped = skipped_steps(sched, steps)
-            rows.append(dict(model=a.name, prompt=name, schedule=label, time=t,
-                             speedup=t_d / t, psnr=psnr, lapvar_ratio=ratio,
-                             budget=d["fraction"], skips=len(steps_skipped),
-                             skip_steps=steps_skipped, tau=tau))
-            print(f"  {label:10s} {t:6.2f}s  {t_d/t:.2f}x  PSNR={psnr:6.2f}dB  "
-                  f"lapVar/dense={ratio:.3f}  budget={d['fraction']*100:4.1f}%  "
+            speedup = t_d / t
+            speedups.setdefault(label, []).append(speedup)
+            print(f"  {label:10s} {t:6.2f}s  {speedup:.2f}x  "
+                  f"budget={d['fraction']*100:4.1f}%  "
                   f"skips={len(skipped_steps(sched, steps))}")
 
-    print(f"\n\n{'schedule':<10s} {'speedup':>8s} {'meanPSNR':>10s} {'worstPSNR':>10s} "
-          f"{'lapVar/dense':>13s}")
-    print("-" * 56)
-    for label in dict.fromkeys(r["schedule"] for r in rows if r["schedule"] != "dense"):
-        sel = [r for r in rows if r["schedule"] == label]
-        print(f"{label:<10s} {np.mean([r['speedup'] for r in sel]):7.2f}x "
-              f"{np.mean([r['psnr'] for r in sel]):9.2f}dB "
-              f"{np.min([r['psnr'] for r in sel]):9.2f}dB "
-              f"{np.mean([r['lapvar_ratio'] for r in sel]):13.3f}")
+    if speedups:
+        print(f"\n\n{'schedule':<12s} {'mean speedup':>12s}")
+        print("-" * 26)
+        for label, vals in speedups.items():
+            print(f"{label:<12s} {np.mean(vals):11.2f}x")
 
-    if args.json:
-        Path(args.json).parent.mkdir(parents=True, exist_ok=True)
-
-        def _json_default(o):
-            if isinstance(o, (np.integer,)):
-                return int(o)
-            if isinstance(o, (np.floating,)):
-                return float(o)
-            if isinstance(o, np.ndarray):
-                return o.tolist()
-            return str(o)
-
-        Path(args.json).write_text(json.dumps(
-            dict(run_tag=run_tag, model=a.name, steps=steps, guidance=guidance,
-                 height=height, width=width, late_start=ls, negative_prompt=neg,
-                 n_streams=a.n_streams, n_blocks=n_blocks, rows=rows),
-            indent=2, default=_json_default))
-        print(f"\nWrote {args.json}")
-    print(f"Images in {out_dir}/")
+    print(f"\nImages in {out_dir}/")
 
 if __name__ == "__main__":
     main()
